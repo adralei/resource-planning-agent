@@ -14,6 +14,10 @@ from resource_tool import RESOURCE_TOOL
 
 from plan_store import create_plan_draft, save_plan
 
+from policy_delegation import POLICY_REVIEW_TOOL
+
+
+
 
 INSTRUCTIONS = """
 Türkçe yanıt veren bir kaynak planlama asistanısın.
@@ -128,13 +132,43 @@ def main():
         max_retries=0,
     )
 
+    agent_mode = os.getenv("AGENT_MODE", "single").strip().lower()
+
+    if agent_mode not in {"single", "multi"}:
+        raise RuntimeError("AGENT_MODE single veya multi olmalı.")
+
+    active_instructions = INSTRUCTIONS
+    active_policy_tool = POLICY_TOOL
+
+    if agent_mode == "multi":
+        active_policy_tool = POLICY_REVIEW_TOOL
+
+        active_instructions = INSTRUCTIONS.replace(
+            "search_resource_policy",
+            "review_resource_policy",
+        )
+
+        active_instructions += """
+Politika uzmanına görev devri:
+- Politika incelemesini review_resource_policy ile uzmana devret.
+- query, uzmanın tek başına anlayabileceği açık bir politika sorusu olmalı.
+- Uzman ana konuşma geçmişini görmez; gerekli bağlamı görevde belirt.
+- Uzmandan hesaplama, atama veya gerçek yönetici onayı isteme.
+- Uzmanın yanıt durumu data.answer.status alanındadır.
+- insufficient, inceleme sonucunda yeterli bilgi bulunmadığı anlamına gelir;
+  teknik hata veya başarılı onay anlamına gelmez.
+- Uzman sonucu şirket yöneticilerinin gerçek onayı yerine geçmez.
+"""
+
+    print(f"Agent modu: {agent_mode}")
+
     tools = [
         {
             "type": "function",
             **TOOL_DEFINITION,
             "strict": True,
         },
-        POLICY_TOOL,
+        active_policy_tool,
         RESOURCE_TOOL,
     ]
 
@@ -199,7 +233,7 @@ def main():
         display_text, turn_responses = run_agent_turn(
             client=client,
             model_name=model_name,
-            instructions=INSTRUCTIONS,
+            instructions=active_instructions,
             tools=tools,
             messages=messages,
             run_policy_tool=run_policy_tool,

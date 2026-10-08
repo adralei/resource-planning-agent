@@ -9,6 +9,8 @@ from resource_tool import run_resource_tool, format_resource_proposal
 
 from copy import deepcopy
 
+from policy_delegation import run_policy_review
+
 MAX_TOOL_CALLS = 3
 
 
@@ -104,6 +106,7 @@ def run_agent_turn(
             "check_capacity",
             "search_resource_policy",
             "propose_external_resources",
+            "review_resource_policy",
         }:
             answer_parts.append("İzin verilmeyen araç istendi; işlem durdu.")
             break
@@ -121,6 +124,17 @@ def run_agent_turn(
 
         elif call.name == "search_resource_policy":
             tool_output = run_policy_tool(call.arguments)
+
+        elif call.name == "review_resource_policy":
+            tool_output, specialist_responses = run_policy_review(
+                client=client,
+                model_name=model_name,
+                arguments_json=call.arguments,
+                run_policy_tool=run_policy_tool,
+            )
+
+            # Uzmanın model çağrılarını da tur kullanımına dahil et.
+            responses.extend(specialist_responses)
 
         else:
             tool_output = run_resource_tool(
@@ -154,6 +168,13 @@ def run_agent_turn(
             if proposal_output is not None:
                 proposal_output.clear()
                 proposal_output.update(deepcopy(data))
+
+
+        elif call.name == "review_resource_policy":
+            answer_parts.append(
+                "Politika uzmanının incelemesi:\n"
+                + data["display_text"]
+            )
 
         else:
             query = json.loads(call.arguments)["query"]
