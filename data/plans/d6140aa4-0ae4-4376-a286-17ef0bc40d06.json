@@ -1,0 +1,92 @@
+{
+  "plan_id": "d6140aa4-0ae4-4376-a286-17ef0bc40d06",
+  "created_at": "2026-10-07T23:47:37.778243+00:00",
+  "project_id": "DEMO-PROJECT-001",
+  "planning_period": "prototype_fixed_period",
+  "status": "approved",
+  "coverage_status": "partial",
+  "proposal": {
+    "status": "proposal_only",
+    "required_skill": "backend",
+    "requested_shortage": 10,
+    "covered_hours": 8,
+    "remaining_shortage": 2,
+    "is_fully_covered": false,
+    "allocations": [
+      {
+        "employee_id": "EMP-004",
+        "name": "Deniz",
+        "team": "Platform",
+        "available_hours": 6,
+        "proposed_hours": 6
+      },
+      {
+        "employee_id": "EMP-005",
+        "name": "Ece",
+        "team": "Integrations",
+        "available_hours": 2,
+        "proposed_hours": 2
+      }
+    ]
+  },
+  "required_approvals": [
+    {
+      "role": "project_manager",
+      "scope": "DEMO-PROJECT-001",
+      "status": "approved",
+      "approved_by": "manager_project",
+      "approved_at": "2026-10-07T23:59:57.832100+00:00"
+    },
+    {
+      "role": "team_manager",
+      "scope": "Integrations",
+      "status": "approved",
+      "approved_by": "manager_integrations",
+      "approved_at": "2026-10-07T23:59:19.298798+00:00"
+    },
+    {
+      "role": "team_manager",
+      "scope": "Platform",
+      "status": "approved",
+      "approved_by": "manager_platform",
+      "approved_at": "2026-10-07T23:57:38.254277+00:00"
+    }
+  ],
+  "submitted_at": "2026-10-07T23:54:17.268600+00:00",
+  "history": [
+    {
+      "event": "submitted_for_approval",
+      "from_status": "draft",
+      "to_status": "pending_approval",
+      "timestamp": "2026-10-07T23:54:17.268600+00:00",
+      "origin": "local_demo_cli"
+    },
+    {
+      "event": "approval_recorded",
+      "actor_id": "manager_platform",
+      "role": "team_manager",
+      "scope": "Platform",
+      "timestamp": "2026-10-07T23:57:38.254277+00:00",
+      "plan_status_after": "pending_approval",
+      "origin": "local_demo_cli"
+    },
+    {
+      "event": "approval_recorded",
+      "actor_id": "manager_integrations",
+      "role": "team_manager",
+      "scope": "Integrations",
+      "timestamp": "2026-10-07T23:59:19.298798+00:00",
+      "plan_status_after": "pending_approval",
+      "origin": "local_demo_cli"
+    },
+    {
+      "event": "approval_recorded",
+      "actor_id": "manager_project",
+      "role": "project_manager",
+      "scope": "DEMO-PROJECT-001",
+      "timestamp": "2026-10-07T23:59:57.832100+00:00",
+      "plan_status_after": "approved",
+      "origin": "local_demo_cli"
+    }
+  ]
+}
