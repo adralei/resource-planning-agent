@@ -16,7 +16,7 @@ from plan_store import create_plan_draft, save_plan
 
 from policy_delegation import POLICY_REVIEW_TOOL
 
-
+from time import perf_counter
 
 
 INSTRUCTIONS = """
@@ -230,6 +230,7 @@ Politika uzmanına görev devri:
             "content": user_request,
         })
 
+        started_at = perf_counter()
         display_text, turn_responses = run_agent_turn(
             client=client,
             model_name=model_name,
@@ -239,6 +240,7 @@ Politika uzmanına görev devri:
             run_policy_tool=run_policy_tool,
             proposal_output=latest_proposal,
         )
+        elapsed_seconds = perf_counter() - started_at
 
         messages.append({
             "role": "assistant",
@@ -246,6 +248,7 @@ Politika uzmanına görev devri:
         })
 
         print(f"Asistan: {display_text}")
+        print(f"[Yanıt süresi] {elapsed_seconds:.2f} saniye")
 
         usages = [
             response.usage
