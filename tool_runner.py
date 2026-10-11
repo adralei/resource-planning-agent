@@ -24,6 +24,11 @@ def run_capacity_tool(arguments_json):
             "ok": False,
             "error": {
                 "code": "invalid_arguments",
+                "message": (
+                    "Kapasite girdisi geçersiz. Desteklenen bir yetkinlik "
+                    "ve pozitif tam sayı saat bilgisi gönderilmeli; "
+                    "ek alan gönderilmemeli."
+                ),
                 "details": [
                     {
                         "field": ".".join(
