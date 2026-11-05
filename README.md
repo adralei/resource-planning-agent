@@ -4,6 +4,8 @@
 
 Built with Python, the OpenAI API, Pydantic, SQLite, retrieval-augmented generation (RAG), and agent delegation.
 
+https://www.youtube.com/watch?v=YVs9Qcscy-E&list=PLcj1zveth3-I
+
 ## The problem
 
 Internal resource planning requires more than matching people to projects. A useful system must check actual availability, respect policies, explain shortages, and prevent accidental or unauthorized updates. This project explores those challenges through an AI agent and deterministic business logic.
