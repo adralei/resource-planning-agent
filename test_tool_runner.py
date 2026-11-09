@@ -1,10 +1,22 @@
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from tool_runner import run_capacity_tool
 
 
 class TestToolRunner(unittest.TestCase):
+    def setUp(self):
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.db_patch = patch(
+            "database.DB_PATH",
+            Path(self.temporary_directory.name) / "tool_runner_test.db",
+        )
+        self.db_patch.start()
+        self.addCleanup(self.db_patch.stop)
+        self.addCleanup(self.temporary_directory.cleanup)
+
     def test_shortage_is_a_successful_tool_result(self):
         output = run_capacity_tool(
             '{"required_skill": "backend", "required_hours": 32}'

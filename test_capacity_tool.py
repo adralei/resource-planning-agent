@@ -1,4 +1,6 @@
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from pydantic import ValidationError
@@ -7,6 +9,16 @@ from capacity_tool import execute_capacity_tool
 
 
 class TestCapacityTool(unittest.TestCase):
+    def setUp(self):
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.db_patch = patch(
+            "database.DB_PATH",
+            Path(self.temporary_directory.name) / "capacity_tool_test.db",
+        )
+        self.db_patch.start()
+        self.addCleanup(self.db_patch.stop)
+        self.addCleanup(self.temporary_directory.cleanup)
+
     def assert_rejected(self, arguments, expected_field, expected_type):
         # Gerçek kapasite fonksiyonunun yerine çağrıları izleyen
         # bir test nesnesi koyuyoruz.

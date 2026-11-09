@@ -7,6 +7,33 @@ from resource_proposal import OTHER_TEAM_EMPLOYEES
 
 DB_PATH = Path(__file__).resolve().parent / "data" / "resource_planning.db"
 PLANNING_PERIOD = "prototype_fixed_period"
+PRIMARY_TEAM = "Core"
+
+# Yalnızca ilk kurulumda kullanılan demo verileri.
+# Var olan SQLite kayıtlarını güncellemez veya sıfırlamaz.
+PRIMARY_TEAM_EMPLOYEES = [
+    {
+        "employee_id": "EMP-001",
+        "name": "Ada",
+        "team": PRIMARY_TEAM,
+        "skill": "backend",
+        "available_hours": 16,
+    },
+    {
+        "employee_id": "EMP-002",
+        "name": "Bora",
+        "team": PRIMARY_TEAM,
+        "skill": "backend",
+        "available_hours": 12,
+    },
+    {
+        "employee_id": "EMP-003",
+        "name": "Cem",
+        "team": PRIMARY_TEAM,
+        "skill": "devops",
+        "available_hours": 8,
+    },
+]
 
 
 def connect_db():
@@ -44,7 +71,7 @@ def initialize_database():
                 )
             """)
 
-            for employee in OTHER_TEAM_EMPLOYEES:
+            for employee in PRIMARY_TEAM_EMPLOYEES + OTHER_TEAM_EMPLOYEES:
                 connection.execute("""
                     INSERT INTO employee_capacity (
                         employee_id,
@@ -72,7 +99,7 @@ def initialize_database():
             raise
 
 
-def read_employee_capacities(planning_period):
+def read_employee_capacities(planning_period, team=None):
     with closing(connect_db()) as connection:
         rows = connection.execute("""
             SELECT
@@ -84,8 +111,9 @@ def read_employee_capacities(planning_period):
                 available_hours
             FROM employee_capacity
             WHERE planning_period = ?
+              AND (? IS NULL OR team = ?)
             ORDER BY employee_id
-        """, (planning_period,)).fetchall()
+        """, (planning_period, team, team)).fetchall()
 
     return [dict(row) for row in rows]
 

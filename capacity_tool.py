@@ -3,7 +3,13 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from capacity_check import check_capacity, employees
+from capacity_check import check_capacity
+from database import (
+    PLANNING_PERIOD,
+    PRIMARY_TEAM,
+    initialize_database,
+    read_employee_capacities,
+)
 
 
 class CapacityRequest(BaseModel):
@@ -40,7 +46,14 @@ def execute_capacity_tool(arguments):
     # Geçersiz girdide bu satır ValidationError oluşturur.
     request = CapacityRequest.model_validate(arguments)
 
-    # Yalnızca doğrulamadan geçen girdilerle hesap yapılır.
+    # Kapasite hesabının tek gerçek veri kaynağı SQLite'dır.
+    # Seed işlemi mevcut kapasite değerlerini değiştirmez.
+    initialize_database()
+    employees = read_employee_capacities(
+        PLANNING_PERIOD,
+        team=PRIMARY_TEAM,
+    )
+
     return check_capacity(
         employees=employees,
         required_skill=request.required_skill,
