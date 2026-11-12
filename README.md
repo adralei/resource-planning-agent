@@ -13,6 +13,7 @@ Internal resource planning requires more than matching people to projects. A use
 ## What it does
 
 - **Capacity checks:** Validates a requested skill and number of hours, calculates available capacity and shortages, and identifies matching candidates.
+- **Dated capacity prototype:** Queries daily availability over a date range (up to 31 days). Missing daily records are reported as unknown rather than treated as zero; this read-only prototype does not reserve hours or change the existing fixed-period workflow.
 - **Resource recommendations:** Explores potential allocations without confusing a proposal with a completed assignment.
 - **Policy-aware answers:** Retrieves relevant policy passages using document chunks, embeddings, and similarity search; surfaces source identifiers and handles insufficient evidence.
 - **Delegated reasoning:** Uses a dedicated policy agent with its own search tools; compares single-agent and delegated flows.
