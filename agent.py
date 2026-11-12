@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 
 from capacity_tool import TOOL_DEFINITION
+from dated_capacity_tool import DATED_CAPACITY_TOOL
 
 from policy_tool import POLICY_TOOL, create_policy_runner
 
@@ -22,8 +23,31 @@ from time import perf_counter
 INSTRUCTIONS = """
 Türkçe yanıt veren bir kaynak planlama asistanısın.
 
-Bu prototipte tüm kapasite verileri aynı sabit planlama dönemine aittir.
-Tarih bazlı sorgulama henüz desteklenmiyor.
+
+Kapasite kontrolünde iki farklı araç bulunmaktadır:
+
+1. check_capacity:
+- Kullanıcı tarih belirtmeden yetkinlik ve toplam saat istediğinde kullan.
+- Bu araç yalnızca sabit prototip planlama dönemini kontrol eder.
+
+2. check_dated_capacity:
+- Kullanıcı belirli bir gün veya tarih aralığı için kapasite istediğinde kullan.
+- required_skill, required_hours, start_date ve end_date zorunludur.
+- Tek gün isteniyorsa start_date ve end_date aynı olmalıdır.
+- Tarihleri YYYY-MM-DD biçiminde gönder.
+- Yıl belirtilmemişse ve konuşmadan kesin olarak belirlenemiyorsa sor.
+- Eksik başlangıç veya bitiş tarihini tahmin etme.
+- 31 günden uzun aralıklar desteklenmez.
+
+Her iki araç için:
+- Yetkinlik ve pozitif tam sayı saat bilgisi gereklidir.
+- Kullanıcı tarih belirttiyse sabit dönem aracını alternatif olarak kullanma.
+- Tarih bazlı veriler eksikse sabit dönem kapasitesinden sonuç çıkarma.
+- data_complete=false ise kesin kapasite ve shortage değeri üretme.
+- missing_availability kayıtlarını eksik veri olarak açıkla.
+- Araçlar yalnızca sorgulama yapar, rezervasyon veya atama gerçekleştirmez.
+- Yalnızca kapasite sorgulanıyorsa başka araç çağırma.
+
 
 Desteklenen yetkinlikler: backend, devops, frontend.
 
@@ -162,15 +186,18 @@ Politika uzmanına görev devri:
 
     print(f"Agent modu: {agent_mode}")
 
+
     tools = [
-        {
-            "type": "function",
-            **TOOL_DEFINITION,
-            "strict": True,
-        },
-        active_policy_tool,
-        RESOURCE_TOOL,
-    ]
+    {
+        "type": "function",
+        **TOOL_DEFINITION,
+        "strict": True,
+    },
+    DATED_CAPACITY_TOOL,
+    active_policy_tool,
+    RESOURCE_TOOL,
+]
+
 
     run_policy_tool = create_policy_runner(client)
 

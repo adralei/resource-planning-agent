@@ -4,6 +4,7 @@ from openai import OpenAIError
 
 from policy_answer import generate_policy_answer
 from tool_runner import run_capacity_tool
+from dated_capacity_tool import run_dated_capacity_tool
 
 from resource_tool import run_resource_tool, format_resource_proposal
 
@@ -26,6 +27,35 @@ def format_capacity(result):
         return summary + " Mevcut kapasite yeterli."
 
     return summary + " Talep mevcut kapasiteyle tamamen karşılanamıyor."
+
+
+def format_dated_capacity(result):
+    start = result["start_date"]
+    end = result["end_date"]
+    skill = result["required_skill"]
+
+    if not result["data_complete"]:
+        missing = result.get("missing_availability", [])
+
+        return (
+            f"{start} - {end} araliginda {skill} "
+            f"kapasitesi kesin hesaplanamadi. "
+            f"{len(missing)} gunluk calisan kaydi eksik. "
+            "Eksik veriler tamamlanmadan kapasite "
+            "yeterliligi belirlenemez."
+        )
+
+    summary = (
+        f"{start} - {end} araliginda {skill} icin "
+        f"{result['required_hours']} saat talep edildi. "
+        f"Mevcut kapasite: {result['total_capacity']} saat. "
+        f"Acik: {result['shortage']} saat."
+    )
+
+    if result["is_sufficient"]:
+        return summary + " Kapasite yeterli."
+
+    return summary + " Kapasite yetersiz."
 
 
 def run_agent_turn(
@@ -104,6 +134,7 @@ def run_agent_turn(
 
         if call.name not in {
             "check_capacity",
+            "check_dated_capacity",
             "search_resource_policy",
             "propose_external_resources",
             "review_resource_policy",
@@ -114,13 +145,18 @@ def run_agent_turn(
         messages.extend(response.output)
         print(f"[Adım {step}] {call.name} {call.arguments}")
 
+
         if call.name == "check_capacity":
-            # Yeni hesap başarısız olursa eski sonucu kullanma.
             capacity_result = None
             tool_output = run_capacity_tool(call.arguments)
 
             if tool_output["ok"]:
                 capacity_result = tool_output["data"]
+
+        elif call.name == "check_dated_capacity":
+            # Sabit donem sonucunu tarih bazli talebe tasima.
+            capacity_result = None
+            tool_output = run_dated_capacity_tool(call.arguments)
 
         elif call.name == "search_resource_policy":
             tool_output = run_policy_tool(call.arguments)
@@ -159,8 +195,12 @@ def run_agent_turn(
 
         data = tool_output["data"]
 
+
         if call.name == "check_capacity":
             answer_parts.append(format_capacity(data))
+
+        elif call.name == "check_dated_capacity":
+            answer_parts.append(format_dated_capacity(data))
 
         elif call.name == "propose_external_resources":
             answer_parts.append(format_resource_proposal(data))
