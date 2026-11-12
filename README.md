@@ -16,7 +16,7 @@ Internal resource planning requires more than matching people to projects. A use
 - **Resource recommendations:** Explores potential allocations without confusing a proposal with a completed assignment.
 - **Policy-aware answers:** Retrieves relevant policy passages using document chunks, embeddings, and similarity search; surfaces source identifiers and handles insufficient evidence.
 - **Delegated reasoning:** Uses a dedicated policy agent with its own search tools; compares single-agent and delegated flows.
-- **Controlled execution:** Separates proposals, demo approvals, and applying plans. SQLite transactions and revalidation protect against partial writes, stale plans, and repeated capacity deductions.
+- **Controlled execution:** Separates proposals, demo approvals, and applying plans. Before assignment, validation confirms that approvals cover the project and every team in the proposed allocations. SQLite transactions and revalidation protect against partial writes, stale plans, and repeated capacity deductions.
 - **Evaluation:** Includes tests for invalid input, tool selection, tool failures, rollback, and competing assignments.
 
 ## High-level workflow

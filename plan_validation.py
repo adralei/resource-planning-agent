@@ -32,6 +32,29 @@ def validate_plan_for_assignment(plan, employees, planning_period):
         employees_by_id[employee_id] = employee
 
     allocations = plan["proposal"]["allocations"]
+
+    # Onayların "approved" olması tek başına yetmez:
+    # Her ekip ve doğru proje için birer onay bulunmalı.
+    expected_approval_scopes = {
+        ("project_manager", plan["project_id"]),
+        *{
+            ("team_manager", allocation["team"])
+            for allocation in allocations
+        },
+    }
+    actual_approval_scopes = [
+        (approval.get("role"), approval.get("scope"))
+        for approval in approvals
+    ]
+    if (
+        len(actual_approval_scopes) != len(expected_approval_scopes)
+        or set(actual_approval_scopes) != expected_approval_scopes
+    ):
+        issues.append(
+            "Planın onay kapsamları (proje ve ekipler) "
+            "önerilen kaynaklarla eşleşmiyor."
+        )
+
     seen_ids = set()
 
     if not allocations:
@@ -97,7 +120,7 @@ def main():
     plan_id = input("Plan kimliği: ").strip()
     plan = load_plan(plan_id)
 
-    # Bu örnekte güncel kayıt kaynağını sentetik verilerle temsil ediyoruz.
+    # Bu örnekte güncel kayıt kaynağı sentetik veriler
     current_employees = deepcopy(OTHER_TEAM_EMPLOYEES)
 
     result = validate_plan_for_assignment(
