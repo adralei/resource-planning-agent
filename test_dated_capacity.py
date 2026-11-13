@@ -178,6 +178,86 @@ class TestDatedCapacity(unittest.TestCase):
         self.assertIsNone(result["is_sufficient"])
 
 
+    def test_capacity_cannot_drop_below_reservations(self):
+        initialize_reservation_schema()
+
+        set_daily_capacity("EMP-001", "2026-11-16", 4)
+
+        reserve_daily_hours(
+            "RES-301",
+            "PLAN-A",
+            "EMP-001",
+            "2026-11-16",
+            3,
+        )
+
+        with self.assertRaises(ValueError):
+            set_daily_capacity(
+                "EMP-001",
+                "2026-11-16",
+                2,
+            )
+
+        result = check_dated_capacity(
+            "backend", 2,
+            "2026-11-16", "2026-11-16"
+        )
+
+        # Ada: 4 - 3 = 1 saat.
+        # Bora icin gunluk kayit yok.
+        self.assertFalse(result["data_complete"])
+        self.assertEqual(result["known_available_hours"], 1)
+
+    def test_capacity_equal_to_reservations(self):
+        initialize_reservation_schema()
+
+        set_daily_capacity("EMP-001", "2026-11-16", 4)
+
+        reserve_daily_hours(
+            "RES-302",
+            "PLAN-A",
+            "EMP-001",
+            "2026-11-16",
+            3,
+        )
+
+        set_daily_capacity("EMP-001", "2026-11-16", 3)
+        set_daily_capacity("EMP-002", "2026-11-16", 0)
+
+        result = check_dated_capacity(
+            "backend", 2,
+            "2026-11-16", "2026-11-16"
+        )
+
+        self.assertTrue(result["data_complete"])
+        self.assertEqual(result["total_capacity"], 0)
+        self.assertEqual(result["shortage"], 2)
+
+    def test_capacity_can_increase_with_reservations(self):
+        initialize_reservation_schema()
+
+        set_daily_capacity("EMP-001", "2026-11-16", 4)
+
+        reserve_daily_hours(
+            "RES-303",
+            "PLAN-A",
+            "EMP-001",
+            "2026-11-16",
+            3,
+        )
+
+        set_daily_capacity("EMP-001", "2026-11-16", 5)
+        set_daily_capacity("EMP-002", "2026-11-16", 0)
+
+        result = check_dated_capacity(
+            "backend", 2,
+            "2026-11-16", "2026-11-16"
+        )
+
+        self.assertEqual(result["total_capacity"], 2)
+        self.assertEqual(result["shortage"], 0)
+        self.assertTrue(result["is_sufficient"])
+
 
 if __name__ == "__main__":
     unittest.main()

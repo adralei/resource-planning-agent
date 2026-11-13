@@ -92,6 +92,39 @@ def set_daily_capacity(employee_id, capacity_date, available_hours,
     with closing(connect_db()) as connection:
         connection.execute("BEGIN IMMEDIATE")
         try:
+
+            # Rezervasyon tablosu henuz olusturulmamis olabilir.
+            table_exists = connection.execute("""
+                SELECT 1
+                FROM sqlite_master
+                WHERE type = 'table'
+                  AND name = 'daily_reservations'
+            """).fetchone()
+
+            if table_exists is not None:
+                reserved_row = connection.execute("""
+                    SELECT COALESCE(
+                        SUM(reserved_hours), 0
+                    ) AS total_reserved
+                    FROM daily_reservations
+                    WHERE employee_id = ?
+                      AND planning_period = ?
+                      AND capacity_date = ?
+                """, (
+                    employee_id,
+                    planning_period,
+                    capacity_date,
+                )).fetchone()
+
+                total_reserved = reserved_row["total_reserved"]
+
+                if available_hours < total_reserved:
+                    raise ValueError(
+                        "Gunluk kapasite mevcut "
+                        "rezervasyonlardan dusuk olamaz. "
+                        f"Rezerve: {total_reserved} saat, "
+                        f"istenen kapasite: {available_hours} saat."
+                    )
             connection.execute("""
                 INSERT INTO employee_daily_capacity (
                     employee_id, planning_period, capacity_date, available_hours
