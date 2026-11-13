@@ -392,6 +392,88 @@ class TestDatedReservations(unittest.TestCase):
         self.assertEqual(rows, [])
 
 
+    def test_batch_insert_failure_rolls_back_all(self):
+        """
+        Ilk INSERT basarili, ikinci INSERT hatali.
+        Transaction tum kayitlari geri almali.
+        """
+
+        set_daily_capacity("EMP-001", "2026-11-16", 4)
+        set_daily_capacity("EMP-002", "2026-11-17", 4)
+
+        # Ikinci INSERT'i bilerek basarisiz yapacak
+        # gecici bir SQLite trigger olusturuyoruz.
+        with closing(connect_db()) as connection:
+            connection.execute("""
+                CREATE TRIGGER fail_second_reservation
+                BEFORE INSERT ON daily_reservations
+                WHEN NEW.reservation_id = 'BATCH-FAIL-002'
+                BEGIN
+                    SELECT RAISE(
+                        ABORT,
+                        'simulated insert failure'
+                    );
+                END
+            """)
+
+        with self.assertRaises(sqlite3.IntegrityError):
+            reserve_daily_batch(
+                plan_id="PLAN-BATCH-FAIL",
+                reservations=[
+                    {
+                        "reservation_id": "BATCH-FAIL-001",
+                        "employee_id": "EMP-001",
+                        "capacity_date": "2026-11-16",
+                        "reserved_hours": 3,
+                    },
+                    {
+                        "reservation_id": "BATCH-FAIL-002",
+                        "employee_id": "EMP-002",
+                        "capacity_date": "2026-11-17",
+                        "reserved_hours": 2,
+                    },
+                ],
+            )
+
+        # Ilk INSERT de rollback ile silinmis olmali.
+        ada_rows = get_daily_reservations(
+            "EMP-001",
+            "2026-11-16",
+            PLANNING_PERIOD,
+        )
+
+        bora_rows = get_daily_reservations(
+            "EMP-002",
+            "2026-11-17",
+            PLANNING_PERIOD,
+        )
+
+        self.assertEqual(ada_rows, [])
+        self.assertEqual(bora_rows, [])
+
+        # Transaction basarisiz olsa da baslangic
+        # kapasite kayitlari korunmali.
+        with closing(connect_db()) as connection:
+            rows = connection.execute("""
+                SELECT employee_id, available_hours
+                FROM employee_daily_capacity
+                WHERE planning_period = ?
+                  AND capacity_date IN (?, ?)
+                ORDER BY employee_id
+            """, (
+                PLANNING_PERIOD,
+                "2026-11-16",
+                "2026-11-17",
+            )).fetchall()
+
+        self.assertEqual(
+            [(row["employee_id"], row["available_hours"])
+             for row in rows],
+            [("EMP-001", 4), ("EMP-002", 4)],
+        )
+
+
+
 
 if __name__ == "__main__":
     unittest.main()
