@@ -11,11 +11,15 @@ from unittest.mock import patch
 from database import PLANNING_PERIOD, connect_db
 from dated_capacity import set_daily_capacity
 
+
 from dated_reservations import (
     initialize_reservation_schema,
     get_daily_reservations,
     reserve_daily_hours,
 )
+
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 
 
 class TestDatedReservations(unittest.TestCase):
@@ -190,6 +194,79 @@ class TestDatedReservations(unittest.TestCase):
                         "RES-101", "PLAN-A",
                         "EMP-001", "2026-11-16", hours,
                     )
+
+
+    def test_concurrent_reservations_cannot_overbook(self):
+        """
+        Iki ayri plan ayni anda 3'er saat ister.
+        Toplam kapasite 4 saat oldugu icin
+        yalnizca bir rezervasyon basarili olmalidir.
+        """
+
+        employee_id = "EMP-001"
+        day = "2026-11-16"
+
+        set_daily_capacity(employee_id, day, 4)
+
+        # Iki thread'in ayni anda baslamasini saglar.
+        barrier = Barrier(2)
+
+        def make_reservation(reservation_id, plan_id):
+            barrier.wait(timeout=5)
+
+            try:
+                reserve_daily_hours(
+                    reservation_id,
+                    plan_id,
+                    employee_id,
+                    day,
+                    3,
+                )
+                return "success"
+
+            except ValueError:
+                return "rejected"
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            future_a = executor.submit(
+                make_reservation,
+                "RES-A",
+                "PLAN-A",
+            )
+
+            future_b = executor.submit(
+                make_reservation,
+                "RES-B",
+                "PLAN-B",
+            )
+
+            results = [
+                future_a.result(),
+                future_b.result(),
+            ]
+
+        # Tam olarak bir rezervasyon basarili olmali.
+        self.assertEqual(results.count("success"), 1)
+        self.assertEqual(results.count("rejected"), 1)
+
+        # Veritabaninda sadece bir kayit bulunmali.
+        reservations = get_daily_reservations(
+            employee_id,
+            day,
+            PLANNING_PERIOD,
+        )
+
+        self.assertEqual(len(reservations), 1)
+
+        total_reserved = sum(
+            reservation["reserved_hours"]
+            for reservation in reservations
+        )
+
+        self.assertEqual(total_reserved, 3)
+
+        # Kapasite asilmamis olmali.
+        self.assertLessEqual(total_reserved, 4)
 
 
 if __name__ == "__main__":
