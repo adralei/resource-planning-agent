@@ -11,11 +11,11 @@ from unittest.mock import patch
 from database import PLANNING_PERIOD, connect_db
 from dated_capacity import set_daily_capacity
 
-
 from dated_reservations import (
     initialize_reservation_schema,
     get_daily_reservations,
     reserve_daily_hours,
+    reserve_daily_batch,
 )
 
 from concurrent.futures import ThreadPoolExecutor
@@ -267,6 +267,130 @@ class TestDatedReservations(unittest.TestCase):
 
         # Kapasite asilmamis olmali.
         self.assertLessEqual(total_reserved, 4)
+
+
+    def test_batch_reservation_success(self):
+        set_daily_capacity("EMP-001", "2026-11-16", 4)
+        set_daily_capacity("EMP-002", "2026-11-17", 3)
+
+        result = reserve_daily_batch(
+            plan_id="PLAN-BATCH-1",
+            reservations=[
+                {
+                    "reservation_id": "BATCH-001",
+                    "employee_id": "EMP-001",
+                    "capacity_date": "2026-11-16",
+                    "reserved_hours": 3,
+                },
+                {
+                    "reservation_id": "BATCH-002",
+                    "employee_id": "EMP-002",
+                    "capacity_date": "2026-11-17",
+                    "reserved_hours": 2,
+                },
+            ],
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["reservation_count"], 2)
+        self.assertEqual(result["total_reserved_hours"], 5)
+
+        for employee_id, day in [
+            ("EMP-001", "2026-11-16"),
+            ("EMP-002", "2026-11-17"),
+        ]:
+            rows = get_daily_reservations(
+                employee_id, day, PLANNING_PERIOD
+            )
+            self.assertEqual(len(rows), 1)
+
+    def test_batch_failure_rolls_back(self):
+        set_daily_capacity("EMP-001", "2026-11-16", 4)
+        set_daily_capacity("EMP-002", "2026-11-17", 1)
+
+        with self.assertRaises(ValueError):
+            reserve_daily_batch(
+                plan_id="PLAN-BATCH-2",
+                reservations=[
+                    {
+                        "reservation_id": "BATCH-003",
+                        "employee_id": "EMP-001",
+                        "capacity_date": "2026-11-16",
+                        "reserved_hours": 3,
+                    },
+                    {
+                        "reservation_id": "BATCH-004",
+                        "employee_id": "EMP-002",
+                        "capacity_date": "2026-11-17",
+                        "reserved_hours": 2,
+                    },
+                ],
+            )
+
+        rows = get_daily_reservations(
+            "EMP-001", "2026-11-16", PLANNING_PERIOD
+        )
+        self.assertEqual(rows, [])
+
+        rows = get_daily_reservations(
+            "EMP-002", "2026-11-17", PLANNING_PERIOD
+        )
+        self.assertEqual(rows, [])
+
+    def test_batch_aggregates_same_day_requests(self):
+        set_daily_capacity("EMP-001", "2026-11-16", 4)
+
+        with self.assertRaises(ValueError):
+            reserve_daily_batch(
+                plan_id="PLAN-BATCH-3",
+                reservations=[
+                    {
+                        "reservation_id": "BATCH-005",
+                        "employee_id": "EMP-001",
+                        "capacity_date": "2026-11-16",
+                        "reserved_hours": 3,
+                    },
+                    {
+                        "reservation_id": "BATCH-006",
+                        "employee_id": "EMP-001",
+                        "capacity_date": "2026-11-16",
+                        "reserved_hours": 2,
+                    },
+                ],
+            )
+
+        rows = get_daily_reservations(
+            "EMP-001", "2026-11-16", PLANNING_PERIOD
+        )
+        self.assertEqual(rows, [])
+
+    def test_batch_duplicate_id_rejected(self):
+        set_daily_capacity("EMP-001", "2026-11-16", 4)
+
+        with self.assertRaises(ValueError):
+            reserve_daily_batch(
+                plan_id="PLAN-BATCH-4",
+                reservations=[
+                    {
+                        "reservation_id": "BATCH-007",
+                        "employee_id": "EMP-001",
+                        "capacity_date": "2026-11-16",
+                        "reserved_hours": 1,
+                    },
+                    {
+                        "reservation_id": "BATCH-007",
+                        "employee_id": "EMP-001",
+                        "capacity_date": "2026-11-16",
+                        "reserved_hours": 1,
+                    },
+                ],
+            )
+
+        rows = get_daily_reservations(
+            "EMP-001", "2026-11-16", PLANNING_PERIOD
+        )
+        self.assertEqual(rows, [])
+
 
 
 if __name__ == "__main__":

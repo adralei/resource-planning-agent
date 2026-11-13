@@ -1,6 +1,7 @@
 """Tests for dated capacity tool request validation and results."""
 
 import json
+import sqlite3
 import unittest
 from unittest.mock import patch
 
@@ -100,6 +101,63 @@ class TestDatedCapacityTool(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertIsNone(result["data"]["total_capacity"])
         self.assertFalse(result["data"]["data_complete"])
+
+
+
+    @patch("dated_capacity_tool.initialize_daily_capacity_schema")
+    @patch("dated_capacity_tool.check_dated_capacity")
+    def test_data_integrity_error_is_structured(
+        self, calculation, initialize
+    ):
+        calculation.side_effect = ValueError(
+            "Rezervasyon kapasiteyi asiyor."
+        )
+
+        result = run_dated_capacity_tool(
+            json.dumps(VALID_REQUEST)
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(
+            result["error"]["code"],
+            "data_integrity_error",
+        )
+
+        self.assertNotIn(
+            "Rezervasyon kapasiteyi asiyor.",
+            result["error"]["message"],
+        )
+
+        initialize.assert_called_once()
+        calculation.assert_called_once()
+
+    @patch("dated_capacity_tool.initialize_daily_capacity_schema")
+    @patch("dated_capacity_tool.check_dated_capacity")
+    def test_database_error_is_structured(
+        self, calculation, initialize
+    ):
+        calculation.side_effect = sqlite3.OperationalError(
+            "database is locked"
+        )
+
+        result = run_dated_capacity_tool(
+            json.dumps(VALID_REQUEST)
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(
+            result["error"]["code"],
+            "database_error",
+        )
+
+        self.assertNotIn(
+            "database is locked",
+            result["error"]["message"],
+        )
+
+        initialize.assert_called_once()
+        calculation.assert_called_once()
+
 
 
 if __name__ == "__main__":

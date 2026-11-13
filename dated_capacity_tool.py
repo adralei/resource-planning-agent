@@ -117,6 +117,20 @@ def run_dated_capacity_tool(arguments_json):
             },
         }
 
+    except ValueError:
+        return {
+            "ok": False,
+            "error": {
+                "code": "data_integrity_error",
+                "message": (
+                    "Gunluk kapasite verilerinde "
+                    "tutarsizlik tespit edildi. "
+                    "Guvenilir kapasite sonucu "
+                    "hesaplanamadi."
+                ),
+            },
+        }
+
     except sqlite3.Error:
         return {
             "ok": False,
