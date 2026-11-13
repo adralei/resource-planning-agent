@@ -16,6 +16,11 @@ from dated_capacity import (
     set_daily_capacity,
 )
 
+from dated_reservations import (
+    initialize_reservation_schema,
+    reserve_daily_hours,
+)
+
 
 class TestDatedCapacity(unittest.TestCase):
     def setUp(self):
@@ -120,6 +125,58 @@ class TestDatedCapacity(unittest.TestCase):
         self.assertEqual(result["total_capacity"], 0)
         self.assertEqual(result["shortage"], 5)
         self.assertEqual(result["candidates"], [])
+
+
+    def test_reservations_reduce_available_capacity(self):
+        self.seed_two_days()
+        initialize_reservation_schema()
+
+        reserve_daily_hours(
+            reservation_id="RES-201",
+            plan_id="PLAN-A",
+            employee_id="EMP-001",
+            capacity_date="2026-11-16",
+            reserved_hours=3,
+        )
+
+        result = check_dated_capacity(
+            "backend",
+            14,
+            "2026-11-16",
+            "2026-11-17",
+        )
+
+        self.assertTrue(result["data_complete"])
+        self.assertEqual(result["total_capacity"], 9)
+        self.assertEqual(result["known_available_hours"], 9)
+        self.assertEqual(result["shortage"], 5)
+        self.assertFalse(result["is_sufficient"])
+
+    def test_missing_data_remains_unknown_with_reservations(self):
+        self.seed_two_days()
+        initialize_reservation_schema()
+
+        reserve_daily_hours(
+            reservation_id="RES-202",
+            plan_id="PLAN-B",
+            employee_id="EMP-001",
+            capacity_date="2026-11-16",
+            reserved_hours=3,
+        )
+
+        result = check_dated_capacity(
+            "backend",
+            14,
+            "2026-11-16",
+            "2026-11-18",
+        )
+
+        self.assertFalse(result["data_complete"])
+        self.assertEqual(result["known_available_hours"], 9)
+        self.assertIsNone(result["total_capacity"])
+        self.assertIsNone(result["shortage"])
+        self.assertIsNone(result["is_sufficient"])
+
 
 
 if __name__ == "__main__":

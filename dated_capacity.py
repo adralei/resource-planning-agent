@@ -135,6 +135,8 @@ def check_dated_capacity(required_skill, required_hours, start_date, end_date,
         for offset in range(day_count)
     ]
 
+    reserved_by_key = {}
+
     with closing(connect_db()) as connection:
         employees = [dict(row) for row in connection.execute("""
             SELECT employee_id, name
@@ -155,20 +157,76 @@ def check_dated_capacity(required_skill, required_hours, start_date, end_date,
         """, (planning_period, team, required_skill,
               start_date, end_date)).fetchall()
 
+        # Eski test veritabanlarinda rezervasyon
+        # tablosu henuz bulunmayabilir.
+        reservation_table_exists = connection.execute("""
+            SELECT 1
+            FROM sqlite_master
+            WHERE type = 'table'
+              AND name = 'daily_reservations'
+        """).fetchone()
+
+        if reservation_table_exists:
+            reservation_rows = connection.execute("""
+                SELECT
+                    r.employee_id,
+                    r.capacity_date,
+                    SUM(r.reserved_hours) AS reserved_hours
+                FROM daily_reservations r
+                JOIN employee_capacity e
+                  ON e.employee_id = r.employee_id
+                 AND e.planning_period = r.planning_period
+                WHERE r.planning_period = ?
+                  AND e.team = ?
+                  AND e.skill = ?
+                  AND r.capacity_date BETWEEN ? AND ?
+                GROUP BY r.employee_id, r.capacity_date
+            """, (
+                planning_period,
+                team,
+                required_skill,
+                start_date,
+                end_date,
+            )).fetchall()
+
+            reserved_by_key = {
+                (row["employee_id"], row["capacity_date"]):
+                    row["reserved_hours"]
+                for row in reservation_rows
+            }
+
+
     records = {
         (row["employee_id"], row["capacity_date"]): row["available_hours"]
         for row in rows
     }
+
     missing = []
     known_hours = 0
 
     for employee in employees:
         for day in expected_dates:
-            hours = records.get((employee["employee_id"], day))
+            key = (employee["employee_id"], day)
+            hours = records.get(key)
+
             if hours is None:
-                missing.append({"employee_id": employee["employee_id"], "date": day})
-            else:
-                known_hours += hours
+                missing.append({
+                    "employee_id": employee["employee_id"],
+                    "date": day,
+                })
+                continue
+
+            reserved = reserved_by_key.get(key, 0)
+
+            # Veri tutarsizligi varsa kesin sonuc uretme.
+            if reserved > hours:
+                raise ValueError(
+                    f"Rezervasyon kapasiteyi asiyor: {key}"
+                )
+
+            remaining = hours - reserved
+            known_hours += remaining
+
 
     complete = not missing
     total = known_hours if complete else None
