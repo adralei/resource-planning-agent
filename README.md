@@ -4,7 +4,6 @@
 
 Built with Python, the OpenAI API, Pydantic, SQLite, retrieval-augmented generation (RAG), and agent delegation. The LLM interprets requests and selects tools; deterministic Python code validates inputs, computes capacity, and controls database writes.
 
-[Project walkthrough video](https://www.youtube.com/watch?v=YVs9Qcscy-E&list=PLcj1zveth3-I)
 
 ## The problem
 
@@ -24,7 +23,7 @@ Resource planning is not simply matching a skill to a person. Teams need to know
 - **Policy-aware reasoning:** Use chunked internal documents, embeddings, retrieval, source references, and a dedicated policy agent; explicitly handle insufficient evidence.
 - **Existing fixed-period plan workflow:** Separate proposal submission, simulated project/team approvals, and application. Validate the required approval scopes and use transactions, revalidation, and safeguards against repeated capacity deductions.
 
-**Boundary:** The daily reservation service is currently a separate Python/database workflow. It is **not yet wired into the approval-gated plan application workflow**, and the agent's dated-capacity tool is read-only. The dated-plan approval guard and its integration are the next work in progress; do not treat a standalone reservation service call as authorization to assign staff.
+**Boundary:** The daily reservation service is currently a separate Python/database workflow. It is **not yet wired into the approval-gated plan application workflow**, and the agent's dated-capacity tool is read-only. The dated-plan guard and preflight validate approved reservation snapshots, but they do not apply reservations; do not treat a standalone reservation service call as authorization to assign staff.
 
 ## Architecture
 
@@ -62,20 +61,49 @@ Validated employee-day requests -> BEGIN IMMEDIATE
 
 `Python` · `OpenAI API / Responses tool calling` · `Pydantic` · `SQLite` · `Embeddings / RAG` · `Agent delegation` · `unittest`
 
-## Repository guide
+## Architecture and project structure
 
-| Area | Key files |
+The installable Python package lives under `src/resource_planning_agent/`. Feature packages separate orchestration, tools, planning, approvals, persistence, and policy retrieval. Root-level `data/` and `docs/` intentionally remain outside the package: database state, saved plan JSON files, and policy text keep their existing locations.
+
+```text
+.
+├── src/resource_planning_agent/
+│   ├── agents/       # Interactive agent, tool loop, policy agent/delegation
+│   ├── approvals/    # Submit, approve, and apply fixed-period plans
+│   ├── planning/     # Capacity, proposals, reservations, validation, preflight
+│   ├── policies/     # Policy chunks, retrieval, and grounded answers
+│   ├── scripts/      # Runnable demos and developer utilities
+│   ├── storage/      # SQLite database and plan JSON persistence
+│   ├── tools/        # Pydantic schemas and tool dispatchers
+│   └── paths.py      # Stable project-root paths for .env, data, and docs
+├── tests/
+│   ├── agents/
+│   ├── approvals/
+│   ├── planning/
+│   ├── policies/
+│   └── tools/
+├── data/
+│   ├── plans/        # Existing plan JSON state
+│   └── resource_planning.db
+├── docs/
+│   └── resource_policy.md
+├── .env.example
+├── pyproject.toml
+└── README.md
+```
+
+### Main modules
+
+| Package | Responsibilities |
 | --- | --- |
-| Agent and tool orchestration | `agent.py`, `agent_loop.py`, `tool_runner.py` |
-| Fixed-period capacity and recommendations | `capacity_check.py`, `capacity_tool.py`, `resource_proposal.py`, `resource_tool.py` |
-| Date-aware capacity | `dated_capacity.py`, `dated_capacity_tool.py` |
-| Daily reservations | `dated_reservations.py` |
-| Daily-capacity setup and reversible demo | `seed_daily_capacity.py`, `demo_dated_reservation.py` |
-| Policy retrieval / delegation | `policy_chunks.py`, `policy_search.py`, `policy_semantic_search.py`, `policy_agent.py`, `policy_delegation.py` |
-| Fixed-period plan lifecycle | `submit_plan.py`, `approve_plan.py`, `apply_plan.py`, `plan_store.py`, `plan_validation.py`, `database.py` |
-| Tests and evaluation | `test_*.py`, `eval_tool_selection.py` |
-
-The upcoming `dated_plan_guard.py` / `test_dated_plan_guard.py` are part of the **in-progress** dated-plan approval integration and are not counted as completed functionality here.
+| `agents` | Interactive agent, bounded tool loop, policy specialist, and delegation |
+| `tools` | Capacity, dated-capacity, resource, and policy tool schemas/dispatch |
+| `planning` | Capacity calculations, resource proposals, dated reservations, plan validation and preflight |
+| `approvals` | Plan submission, simulated scoped approvals, and fixed-period application |
+| `storage` | SQLite schema/data access and atomic plan JSON persistence |
+| `policies` | Policy document chunking, lexical/semantic search, and cited answers |
+| `scripts` | Database demos/seeding, plan inspection, API check, and tool-selection evaluation |
+| `tests` | `unittest` cases grouped by feature |
 
 ## Run locally
 
@@ -88,17 +116,18 @@ git clone https://github.com/adralei/resource-planning-agent.git
 cd resource-planning-agent
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install openai pydantic python-dotenv numpy
+python -m pip install -e .
+Copy-Item .env.example .env
 ```
 
-Set `OPENAI_API_KEY` in your local environment or untracked `.env` file before using the model-backed agent. Never commit secrets or local database files.
+Set `OPENAI_API_KEY` and `OPENAI_MODEL` in your local `.env` file before using model-backed commands. `AGENT_MODE` is optional and defaults to `single`; `multi` enables the policy specialist. Never commit secrets.
 
 ### 2. Explore the agent and capacity tools
 
 ```powershell
-python capacity_check.py
-python dated_capacity.py
-python agent.py
+python -m resource_planning_agent.planning.capacity_check
+python -m resource_planning_agent.planning.dated_capacity
+python -m resource_planning_agent.agents.agent
 ```
 
 The `dated_capacity.py` demo uses an isolated temporary database. For an interactive agent session, try:
@@ -112,7 +141,7 @@ The CLI supports `/yeni` (clear conversation), `/plan` (save the last proposal i
 ### 3. Initialize sample daily data (changes local SQLite)
 
 ```powershell
-python seed_daily_capacity.py
+python -m resource_planning_agent.scripts.seed_daily_capacity
 ```
 
 This script adds four **missing** example employee-day records for 16–17 November 2026 without overwriting records already present. It modifies the project's local SQLite database; back it up first.
@@ -120,23 +149,36 @@ This script adds four **missing** example employee-day records for 16–17 Novem
 ### 4. Explore the reservation demo (changes local SQLite)
 
 ```powershell
-python demo_dated_reservation.py show
-python demo_dated_reservation.py add
-python demo_dated_reservation.py show
-python demo_dated_reservation.py remove
+python -m resource_planning_agent.scripts.demo_dated_reservation show
+python -m resource_planning_agent.scripts.demo_dated_reservation add
+python -m resource_planning_agent.scripts.demo_dated_reservation show
+python -m resource_planning_agent.scripts.demo_dated_reservation remove
 ```
 
 `add` creates one identifiable demo reservation in the local database; `remove` deletes only the matching demo record. Complete cleanup after experiments. This is a **developer demo**, not an approval-gated business operation.
 
+### Plan approval and application commands
+
+The local demo lifecycle can also be run as package modules:
+
+```powershell
+python -m resource_planning_agent.approvals.submit_plan
+python -m resource_planning_agent.approvals.approve_plan
+python -m resource_planning_agent.approvals.apply_plan
+python -m resource_planning_agent.scripts.view_plan
+```
+
+These commands read or update the existing plan JSON files and SQLite database. `apply_plan` changes fixed-period capacity; back up the local database first. Approvals use demo identities and are not real authentication or authorization.
+
 ### 5. Run tests
 
 ```powershell
-python -m unittest discover -p "test_*.py" -v
+python -m unittest discover -s tests -t . -v
 ```
 
-The project has reached **65 reported passing tests** through the batch INSERT rollback step (before the in-progress dated-plan approval guard). Coverage includes Pydantic validation, missing data semantics, agent dispatch, reservation limits, concurrent booking attempts, transactional rollback, plan approvals, and policy-answer evidence checks.
+Coverage includes Pydantic validation, missing-data semantics, agent dispatch, reservation limits, concurrent booking attempts, transactional rollback, plan approvals, dated-plan preflight, and policy-answer evidence checks.
 
-Some scripts require initialized sample data or local configuration. Run them from the repository root, and check their entry points before executing write-oriented demos.
+Run module commands from the repository root after installing the package. Some commands require API credentials or initialized sample data. The seed and reservation-demo commands write to the existing local SQLite database; back it up and inspect the command before use.
 
 ## Example scenarios
 

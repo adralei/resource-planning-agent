@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "resource-planning-agent"
+version = "0.1.0"
+description = "AI-assisted resource and capacity planning prototype"
+requires-python = ">=3.10"
+dependencies = [
+    "openai",
+    "pydantic",
+    "python-dotenv",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["resource_planning_agent*"]
