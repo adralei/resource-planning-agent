@@ -2,6 +2,10 @@ from datetime import datetime, timezone
 
 from resource_planning_agent.storage.plan_store import load_plan, update_plan
 
+from resource_planning_agent.planning.plan_fingerprint import (
+    calculate_plan_fingerprint,
+)
+
 
 # Demo kullanıcıları: gerçek kimlik doğrulama yerine geçmez.
 DEMO_USERS = {
@@ -77,6 +81,23 @@ def approve_plan(plan_id, actor_id, approval_role, approval_scope):
 
     if all_approved:
         plan["status"] = "approved"
+
+        proposal = plan.get("proposal", {})
+
+        # Yalnizca tarihli rezervasyon planlarina
+        # fingerprint uygula.
+        if "dated_reservations" in proposal:
+
+            # Onceden fingerprint bulunmasi,
+            # onay surecinde beklenmeyen bir durumdur.
+            if "approval_fingerprint" in plan:
+                raise ValueError(
+                    "Plan icin zaten fingerprint bulunuyor."
+                )
+
+            plan["approval_fingerprint"] = (
+                calculate_plan_fingerprint(plan)
+            )
 
     plan.setdefault("history", []).append({
         "event": "approval_recorded",
