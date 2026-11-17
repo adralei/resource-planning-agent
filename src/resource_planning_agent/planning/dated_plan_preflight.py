@@ -2,6 +2,9 @@
 from resource_planning_agent.storage.plan_store import load_plan
 from resource_planning_agent.planning.dated_plan_guard import validate_approved_dated_plan
 
+from resource_planning_agent.planning.plan_fingerprint import (
+    verify_plan_fingerprint,
+)
 
 def preflight_dated_plan(plan_id):
     """
@@ -31,6 +34,28 @@ def preflight_dated_plan(plan_id):
         plan,
         reservations,
     )
+
+
+    # Tarihli planlar icin onay fingerprint'i zorunlu.
+    expected_fingerprint = plan.get(
+        "approval_fingerprint"
+    )
+
+    if expected_fingerprint is None:
+        raise ValueError(
+            "Onay fingerprint'i bulunamadi. "
+            "Plan uygulamaya hazir degil."
+        )
+
+    if not verify_plan_fingerprint(
+        plan,
+        expected_fingerprint,
+    ):
+        raise ValueError(
+            "Plan icerigi onay sonrasinda "
+            "degismis veya fingerprint eslesmiyor."
+        )
+
 
     return {
         "status": "preflight_passed",
