@@ -13,13 +13,25 @@ from resource_planning_agent.planning.plan_fingerprint import (
 
 class TestDatedPlanPreflight(unittest.TestCase):
 
-    @patch("resource_planning_agent.planning.dated_plan_preflight.load_plan")
-    def test_valid_stored_plan_passes(self, load):
+
+    @patch(
+        "resource_planning_agent.planning."
+        "dated_plan_preflight.verify_registered_approval"
+    )
+    @patch(
+        "resource_planning_agent.planning."
+        "dated_plan_preflight.load_plan"
+    )
+    def test_valid_stored_plan_passes(
+        self, load, verify_registry
+    ):
         plan = make_approved_plan()
         plan["approval_fingerprint"] = (
             calculate_plan_fingerprint(plan)
         )
+
         load.return_value = plan
+        verify_registry.return_value = True
 
         result = preflight_dated_plan("PLAN-501")
 
@@ -29,6 +41,7 @@ class TestDatedPlanPreflight(unittest.TestCase):
         self.assertEqual(result["reservation_count"], 2)
         self.assertFalse(result["applied"])
 
+        verify_registry.assert_called_once_with(plan)
         load.assert_called_once_with("PLAN-501")
 
     @patch("resource_planning_agent.planning.dated_plan_preflight.load_plan")
@@ -98,6 +111,60 @@ class TestDatedPlanPreflight(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             preflight_dated_plan("PLAN-501")
+
+    
+    @patch(
+        "resource_planning_agent.planning."
+        "dated_plan_preflight.verify_registered_approval"
+    )
+    @patch(
+        "resource_planning_agent.planning."
+        "dated_plan_preflight.load_plan"
+    )
+    def test_missing_registry_approval_rejected(
+        self, load, verify_registry
+    ):
+        plan = make_approved_plan()
+        plan["approval_fingerprint"] = (
+            calculate_plan_fingerprint(plan)
+        )
+
+        load.return_value = plan
+        verify_registry.return_value = False
+
+        with self.assertRaisesRegex(
+            ValueError, "Bagimsiz onay kaydi"
+        ):
+            preflight_dated_plan("PLAN-501")
+
+        verify_registry.assert_called_once_with(plan)
+
+    @patch(
+        "resource_planning_agent.planning."
+        "dated_plan_preflight.verify_registered_approval"
+    )
+    @patch(
+        "resource_planning_agent.planning."
+        "dated_plan_preflight.load_plan"
+    )
+    def test_modified_registry_hash_rejected(
+        self, load, verify_registry
+    ):
+        plan = make_approved_plan()
+        plan["approval_fingerprint"] = (
+            calculate_plan_fingerprint(plan)
+        )
+
+        load.return_value = plan
+
+        # Bagimsiz kayitla eslesmeyen bir plan simule edilir.
+        verify_registry.return_value = False
+
+        with self.assertRaises(ValueError):
+            preflight_dated_plan("PLAN-501")
+
+        self.assertFalse(verify_registry.return_value)
+
 
 
 if __name__ == "__main__":

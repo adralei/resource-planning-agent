@@ -6,6 +6,10 @@ from resource_planning_agent.planning.plan_fingerprint import (
     verify_plan_fingerprint,
 )
 
+from resource_planning_agent.storage.approval_registry import (
+    verify_registered_approval,
+)
+
 def preflight_dated_plan(plan_id):
     """
     Kaydedilmis tarihli plani yukler ve
@@ -54,6 +58,15 @@ def preflight_dated_plan(plan_id):
         raise ValueError(
             "Plan icerigi onay sonrasinda "
             "degismis veya fingerprint eslesmiyor."
+        )
+
+
+    # Plan JSON'undaki fingerprint tek basina yeterli degil.
+    # SQLite'daki bagimsiz onay kaydi da eslesmeli.
+    if not verify_registered_approval(plan):
+        raise ValueError(
+            "Bagimsiz onay kaydi bulunamadi "
+            "veya plan icerigi kayitla eslesmiyor."
         )
 
 
