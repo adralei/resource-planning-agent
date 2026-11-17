@@ -1,6 +1,9 @@
 
 from resource_planning_agent.storage.plan_store import load_plan
-from resource_planning_agent.planning.dated_plan_guard import validate_approved_dated_plan
+
+from resource_planning_agent.planning.dated_plan_guard import (
+    validate_approved_dated_plan,
+)
 
 from resource_planning_agent.planning.plan_fingerprint import (
     verify_plan_fingerprint,
@@ -10,20 +13,34 @@ from resource_planning_agent.storage.approval_registry import (
     verify_registered_approval,
 )
 
+
 def preflight_dated_plan(plan_id):
     """
-    Kaydedilmis tarihli plani yukler ve
-    rezervasyon kapsamini dogrular.
+    Kaydedilmis tarihli plani yukler ve dogrular.
 
-    Rezervasyon veya kapasite degisikligi yapmaz.
+    Kontroller:
+    1. Plan kimligi
+    2. Tarihli rezervasyonlar
+    3. Planin onay durumu ve onay kapsami
+    4. Plan fingerprint dogrulamasi
+    5. Bagimsiz SQLite onay kaydi
+
+    Bu fonksiyon rezervasyon olusturmaz
+    veya kapasiteyi degistirmez.
     """
 
+    # 1. Plan kimligini dogrula.
     if not isinstance(plan_id, str) or not plan_id.strip():
         raise ValueError("Gecerli plan_id gerekli.")
 
+    # 2. Kaydedilmis plani yukle.
     plan = load_plan(plan_id)
 
+    if not isinstance(plan, dict):
+        raise ValueError("Plan verisi gecersiz.")
+
     proposal = plan.get("proposal")
+
     if not isinstance(proposal, dict):
         raise ValueError("Plan onerisi gecersiz.")
 
@@ -34,13 +51,13 @@ def preflight_dated_plan(plan_id):
             "Planda tarihli rezervasyonlar bulunmuyor."
         )
 
+    # 3. Onay ve rezervasyon kapsamini dogrula.
     validation = validate_approved_dated_plan(
         plan,
         reservations,
     )
 
-
-    # Tarihli planlar icin onay fingerprint'i zorunlu.
+    # 4. Planin kendi fingerprint'ini dogrula.
     expected_fingerprint = plan.get(
         "approval_fingerprint"
     )
@@ -60,16 +77,14 @@ def preflight_dated_plan(plan_id):
             "degismis veya fingerprint eslesmiyor."
         )
 
-
-    # Plan JSON'undaki fingerprint tek basina yeterli degil.
-    # SQLite'daki bagimsiz onay kaydi da eslesmeli.
+    # 5. SQLite'daki bagimsiz onay kaydini dogrula.
     if not verify_registered_approval(plan):
         raise ValueError(
             "Bagimsiz onay kaydi bulunamadi "
             "veya plan icerigi kayitla eslesmiyor."
         )
 
-
+    # 6. Tum kontroller basarili.
     return {
         "status": "preflight_passed",
         "plan_id": plan["plan_id"],
