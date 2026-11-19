@@ -7,6 +7,13 @@ from resource_planning_agent.planning.plan_fingerprint import (
 )
 
 
+from resource_planning_agent.storage.approval_registry import (
+    initialize_approval_registry,
+    record_approval_fingerprint,
+)
+
+
+
 # Demo kullanıcıları: gerçek kimlik doğrulama yerine geçmez.
 DEMO_USERS = {
     "manager_project": {
@@ -109,8 +116,21 @@ def approve_plan(plan_id, actor_id, approval_role, approval_scope):
         "origin": "local_demo_cli",
     })
 
+    
+    # Guncellenen onay durumunu JSON dosyasina kaydet.
     update_plan(plan)
+
+    # Tum onaylar tamamlandiysa ve plan
+    # tarihli rezervasyonlar iceriyorsa
+    # fingerprint'i bagimsiz SQLite kaydina aktar.
+    if all_approved and "dated_reservations" in plan.get(
+        "proposal", {}
+    ):
+        initialize_approval_registry()
+        record_approval_fingerprint(plan)
+
     return plan
+
 
 
 def main():

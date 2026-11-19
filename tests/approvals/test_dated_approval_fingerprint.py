@@ -54,6 +54,28 @@ def make_pending_plan(dated=True):
 
 class TestDatedApprovalFingerprint(unittest.TestCase):
 
+    def setUp(self):
+        """
+        Fingerprint unit testlerinde gercek SQLite
+        veritabanina yazilmasini engeller.
+        """
+
+        registry_patcher = patch(
+            "resource_planning_agent.approvals."
+            "approve_plan.record_approval_fingerprint"
+        )
+
+        initialize_patcher = patch(
+            "resource_planning_agent.approvals."
+            "approve_plan.initialize_approval_registry"
+        )
+
+        self.registry_mock = registry_patcher.start()
+        self.initialize_mock = initialize_patcher.start()
+
+        self.addCleanup(registry_patcher.stop)
+        self.addCleanup(initialize_patcher.stop)
+
     @patch(
         "resource_planning_agent.approvals."
         "approve_plan.update_plan"
@@ -99,6 +121,7 @@ class TestDatedApprovalFingerprint(unittest.TestCase):
             )
         )
         self.assertEqual(update.call_count, 2)
+
 
     @patch(
         "resource_planning_agent.approvals."
