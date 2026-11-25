@@ -21,9 +21,13 @@ Resource planning is not simply matching a skill to a person. Teams need to know
 - **Structured tool errors:** Distinguish invalid arguments, database errors, and detected capacity/reservation inconsistencies, without exposing raw database exception messages to the agent.
 - **Resource recommendations:** Explore potential allocations and external-team resources without representing recommendations as completed assignments.
 - **Policy-aware reasoning:** Use chunked internal documents, embeddings, retrieval, source references, and a dedicated policy agent; explicitly handle insufficient evidence.
-- **Existing fixed-period plan workflow:** Separate proposal submission, simulated project/team approvals, and application. Validate the required approval scopes and use transactions, revalidation, and safeguards against repeated capacity deductions.
+- **Existing fixed-period plan workflow:** Separate proposal submission, simulated project/team approvals, and application. Validate required approval scopes; use SQLite transactions, capacity revalidation, and safeguards against repeated deductions.
+- **Dated-plan approval guard:** Check approved status, project/team approval scopes, allowed employees, and exact match against the dated reservation proposal.
+- **SHA-256 approval fingerprint:** Calculate a deterministic fingerprint of protected plan fields after the final required approval. Detect changes to approved dates, hours, resources, project identity, or approval records.
+- **Independent approval registry:** Record dated-plan fingerprints in a separate SQLite `approval_fingerprints` table. Registration is one-time per plan ID; missing or inconsistent records fail validation.
+- **Dated-plan preflight:** Load the saved plan, validate its approval scope and reservations, verify its embedded fingerprint, and compare it with the SQLite registry record. Preflight is read-only and does not reserve hours.
 
-**Boundary:** The daily reservation service is currently a separate Python/database workflow. It is **not yet wired into the approval-gated plan application workflow**, and the agent's dated-capacity tool is read-only. The dated-plan guard and preflight validate approved reservation snapshots, but they do not apply reservations; do not treat a standalone reservation service call as authorization to assign staff.
+**Boundary:** Dated-plan final approval now records a fingerprint in plan JSON and the SQLite registry, and preflight checks both. However, **preflight is not yet coupled to atomic dated-plan application**. The daily reservation functions remain developer-facing and must not be treated as an authorized staffing action. The agent's dated-capacity tool remains read-only.
 
 ## Architecture
 
@@ -49,6 +53,16 @@ Natural-language request
 Existing fixed-period application:
 Proposal -> Required approvals -> Revalidation -> SQLite transaction
 
+Dated-plan approval / preflight (no reservation is created):
+Pending approvals -> Final approval -> SHA-256 fingerprint
+      |                                  |
+      |                        Plan JSON + SQLite registry
+      v                                  |
+Saved plan -> Approval guard -> Fingerprint + registry comparison
+      |
+      v
+Read-only preflight result (not authorization to apply)
+
 Separate dated reservation service (not yet attached to approvals):
 Validated employee-day requests -> BEGIN IMMEDIATE
     -> Capacity / duplicate checks -> Batch INSERT -> COMMIT
@@ -70,10 +84,10 @@ The installable Python package lives under `src/resource_planning_agent/`. Featu
 ├── src/resource_planning_agent/
 │   ├── agents/       # Interactive agent, tool loop, policy agent/delegation
 │   ├── approvals/    # Submit, approve, and apply fixed-period plans
-│   ├── planning/     # Capacity, proposals, reservations, validation, preflight
+│   ├── planning/     # Capacity, reservations, guard, fingerprint, preflight
 │   ├── policies/     # Policy chunks, retrieval, and grounded answers
 │   ├── scripts/      # Runnable demos and developer utilities
-│   ├── storage/      # SQLite database and plan JSON persistence
+│   ├── storage/      # SQLite, approval registry, plan JSON persistence
 │   ├── tools/        # Pydantic schemas and tool dispatchers
 │   └── paths.py      # Stable project-root paths for .env, data, and docs
 ├── tests/
@@ -81,6 +95,7 @@ The installable Python package lives under `src/resource_planning_agent/`. Featu
 │   ├── approvals/
 │   ├── planning/
 │   ├── policies/
+│   ├── storage/
 │   └── tools/
 ├── data/
 │   ├── plans/        # Existing plan JSON state
@@ -98,12 +113,23 @@ The installable Python package lives under `src/resource_planning_agent/`. Featu
 | --- | --- |
 | `agents` | Interactive agent, bounded tool loop, policy specialist, and delegation |
 | `tools` | Capacity, dated-capacity, resource, and policy tool schemas/dispatch |
-| `planning` | Capacity calculations, resource proposals, dated reservations, plan validation and preflight |
-| `approvals` | Plan submission, simulated scoped approvals, and fixed-period application |
-| `storage` | SQLite schema/data access and atomic plan JSON persistence |
+| `planning` | Capacity calculations, resource proposals, dated reservations, approval guard, SHA-256 fingerprint, and read-only preflight |
+| `approvals` | Plan submission, demo scoped approvals, dated-plan fingerprint registration on final approval, and fixed-period application |
+| `storage` | SQLite schema/data access, independent approval fingerprint registry, and plan JSON persistence |
 | `policies` | Policy document chunking, lexical/semantic search, and cited answers |
 | `scripts` | Database demos/seeding, plan inspection, API check, and tool-selection evaluation |
 | `tests` | `unittest` cases grouped by feature |
+
+## Approval integrity and consistency
+
+Dated plans use a staged, fail-closed approval check:
+
+1. Managers approve the project and all relevant teams using **demo identities**. Partial approvals do not produce a dated-plan fingerprint.
+2. The **last required approval** marks the plan `approved`, calculates a versioned SHA-256 fingerprint over protected plan content (including proposals and approval records), and saves the plan JSON.
+3. The approval workflow then inserts that fingerprint into SQLite `approval_fingerprints` (one row per `plan_id`, no overwrites).
+4. `preflight_dated_plan(plan_id)` loads the saved plan and checks approval coverage, reservation match, the embedded fingerprint, and the independent registry record. Any absent or conflicting record rejects the plan.
+
+**Consistency limitation:** Plan JSON and SQLite are separate storage systems. A failure between the JSON update and registry insertion can leave a plan marked `approved` without a registry record. The approval function surfaces the error, and preflight refuses such plans; **automatic repair/retry and atomic cross-store commit are not implemented yet**. SHA-256 and a separate local SQLite table improve detection of JSON-only edits but are **not tamper-proof** against an actor able to modify both stores, and they do not replace identity verification, role-based authorization, or digital signatures.
 
 ## Run locally
 
@@ -176,7 +202,7 @@ These commands read or update the existing plan JSON files and SQLite database. 
 python -m unittest discover -s tests -t . -v
 ```
 
-Coverage includes Pydantic validation, missing-data semantics, agent dispatch, reservation limits, concurrent booking attempts, transactional rollback, plan approvals, dated-plan preflight, and policy-answer evidence checks.
+**Latest reported result: 94 tests passing** (`python -m unittest discover -s tests -t . -v`, 17 November 2026). Coverage includes Pydantic validation, missing-data semantics, agent dispatch, reservation limits, concurrent booking attempts, transaction rollback, scoped plan approvals, fingerprint changes, SQLite approval registry registration/failure handling, dated-plan preflight, and policy-answer evidence checks.
 
 Run module commands from the repository root after installing the package. Some commands require API credentials or initialized sample data. The seed and reservation-demo commands write to the existing local SQLite database; back it up and inspect the command before use.
 
@@ -202,7 +228,7 @@ If one multi-employee reservation batch contains an invalid or excessive request
 
 This is a **local prototype with synthetic employee data, a fixed-period legacy workflow, dated availability records, and simulated role-based approvals**. It is not connected to a real HR, ERP, payroll, or workforce-management system and does not autonomously authorize staffing changes.
 
-The dated reservation engine currently exposes developer-facing Python functions rather than a production authorization boundary. **Approval-scoped dated plans, immutable approval snapshots, application idempotency, and a single transaction connecting dated plan application to reservations** remain future integration work. Additional production considerations include access control, audit logging, migrations, observability, broader concurrency testing, and repeatable evaluations of model tool-selection accuracy and latency.
+The dated reservation engine currently exposes developer-facing Python functions rather than a production authorization boundary. The dated-plan guard, fingerprint, registry and preflight validate inputs but do not themselves execute reservations. **Approval-scoped atomic dated-plan application, recovery from partial JSON/SQLite approval writes, plan application idempotency, and immutable/externally protected approval records** remain future integration work. Additional production considerations include access control, audit logging, migrations, observability, broader concurrency testing, and repeatable evaluations of model tool-selection accuracy and latency.
 
 ## Why this project matters
 
