@@ -321,3 +321,118 @@ def get_open_review_case_for_plan(plan_id):
         return None
 
     return json.loads(row["case_data"])
+
+
+def complete_approval_review_case(
+    case_id,
+    reviewed_by,
+    review_note,
+):
+    """
+    Acik inceleme vakasini reviewed durumuna tasir.
+
+    - Plan onayi vermez.
+    - Approval Registry kaydini degistirmez.
+    - Rezervasyon olusturmaz.
+    - Ayni vakayi iki kez tamamlamaya izin vermez.
+
+    reviewed_by bir demo kayit alanidir.
+    Gercek kimlik dogrulama yapmaz.
+    """
+    from datetime import datetime, timezone
+
+    for name, value in {
+        "case_id": case_id,
+        "reviewed_by": reviewed_by,
+        "review_note": review_note,
+    }.items():
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(
+                f"Gecerli {name} gerekli."
+            )
+
+    with closing(connect_db()) as connection:
+        connection.execute("BEGIN IMMEDIATE")
+
+        try:
+            row = connection.execute("""
+                SELECT case_status, case_data
+                FROM approval_review_cases
+                WHERE case_id = ?
+            """, (case_id,)).fetchone()
+
+            if row is None:
+                raise ValueError(
+                    "Inceleme vakasi bulunamadi."
+                )
+
+            if row["case_status"] != "awaiting_manual_review":
+                raise ValueError(
+                    "Inceleme vakasi zaten tamamlanmis "
+                    "veya uygun durumda degil."
+                )
+
+            review_case = json.loads(row["case_data"])
+
+            if (
+                not isinstance(review_case, dict)
+                or review_case.get("case_id") != case_id
+                or review_case.get("case_status")
+                    != "awaiting_manual_review"
+                or review_case.get("manual_review_required")
+                    is not True
+                or review_case.get("approval_granted")
+                    is not False
+                or review_case.get("registry_modified")
+                    is not False
+                or review_case.get("reservations_created")
+                    is not False
+                or review_case.get("automatic_recovery_allowed")
+                    is not False
+                or review_case.get("can_proceed_to_preflight")
+                    is not False
+            ):
+                raise ValueError(
+                    "Inceleme verisi tutarsiz veya guvensiz."
+                )
+
+            reviewed_at = datetime.now(
+                timezone.utc
+            ).isoformat()
+
+            review_case["case_status"] = "reviewed"
+            review_case["reviewed_by"] = reviewed_by.strip()
+            review_case["reviewed_at"] = reviewed_at
+            review_case["review_note"] = review_note.strip()
+
+            updated_json = json.dumps(
+                review_case,
+                ensure_ascii=False,
+                sort_keys=True,
+                allow_nan=False,
+            )
+
+            cursor = connection.execute("""
+                UPDATE approval_review_cases
+                SET case_status = ?,
+                    case_data = ?
+                WHERE case_id = ?
+                  AND case_status = 'awaiting_manual_review'
+            """, (
+                "reviewed",
+                updated_json,
+                case_id,
+            ))
+
+            if cursor.rowcount != 1:
+                raise RuntimeError(
+                    "Inceleme durumu guncellenemedi."
+                )
+
+            connection.commit()
+
+        except Exception:
+            connection.rollback()
+            raise
+
+    return review_case
