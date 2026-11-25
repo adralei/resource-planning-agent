@@ -53,9 +53,10 @@ def initialize_review_case_store():
         """)
 
         connection.execute("""
-            CREATE INDEX IF NOT EXISTS
-                idx_review_cases_plan_id
+            CREATE UNIQUE INDEX IF NOT EXISTS
+                idx_open_review_cases_plan_id
             ON approval_review_cases (plan_id)
+            WHERE case_status = 'awaiting_manual_review'
         """)
 
 
@@ -201,6 +202,31 @@ def load_approval_review_case(case_id):
             FROM approval_review_cases
             WHERE case_id = ?
         """, (case_id,)).fetchone()
+
+    if row is None:
+        return None
+
+    return json.loads(row["case_data"])
+
+
+def get_open_review_case_for_plan(plan_id):
+    """
+    Bir planin mevcut acik inceleme vakasini getirir.
+
+    Kayit bulunamazsa None doner.
+    Veritabanina yazmaz.
+    """
+
+    if not isinstance(plan_id, str) or not plan_id.strip():
+        raise ValueError("Gecerli plan_id gerekli.")
+
+    with closing(connect_db()) as connection:
+        row = connection.execute("""
+            SELECT case_data
+            FROM approval_review_cases
+            WHERE plan_id = ?
+              AND case_status = 'awaiting_manual_review'
+        """, (plan_id,)).fetchone()
 
     if row is None:
         return None
