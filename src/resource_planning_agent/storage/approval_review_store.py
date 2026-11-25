@@ -35,29 +35,118 @@ REVIEWABLE_STATUSES = {
 
 def initialize_review_case_store():
     """
-    Manuel inceleme vakalari icin SQLite tablosu.
-    Mevcut kayitlari silmez veya degistirmez.
+    Review case tablosunu olusturur veya eski semayi
+    yeni lifecycle semasina tasir.
+
+    Mevcut vakalar korunur.
+    Migration tek transaction icinde gerceklesir.
     """
 
     with closing(connect_db()) as connection:
-        connection.execute("""
-            CREATE TABLE IF NOT EXISTS approval_review_cases (
-                case_id TEXT PRIMARY KEY,
-                plan_id TEXT NOT NULL,
-                case_status TEXT NOT NULL
-                    CHECK (case_status = 'awaiting_manual_review'),
-                consistency_status TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                case_data TEXT NOT NULL
-            )
-        """)
+        connection.execute("BEGIN IMMEDIATE")
 
-        connection.execute("""
-            CREATE UNIQUE INDEX IF NOT EXISTS
-                idx_open_review_cases_plan_id
-            ON approval_review_cases (plan_id)
-            WHERE case_status = 'awaiting_manual_review'
-        """)
+        try:
+            connection.execute("""
+                CREATE TABLE IF NOT EXISTS approval_review_cases (
+                    case_id TEXT PRIMARY KEY,
+                    plan_id TEXT NOT NULL,
+                    case_status TEXT NOT NULL
+                        CHECK (
+                            case_status IN (
+                                'awaiting_manual_review',
+                                'reviewed'
+                            )
+                        ),
+                    consistency_status TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    case_data TEXT NOT NULL
+                )
+            """)
+
+            row = connection.execute("""
+                SELECT sql
+                FROM sqlite_master
+                WHERE type = 'table'
+                  AND name = 'approval_review_cases'
+            """).fetchone()
+
+            if row is None:
+                raise RuntimeError(
+                    "Review case tablosu bulunamadi."
+                )
+
+            current_schema = row["sql"]
+
+            # Eski sema yalnizca awaiting_manual_review
+            # durumunu kabul ediyordu.
+            needs_migration = (
+                "'reviewed'" not in current_schema
+            )
+
+            if needs_migration:
+                connection.execute("""
+                    CREATE TABLE approval_review_cases_new (
+                        case_id TEXT PRIMARY KEY,
+                        plan_id TEXT NOT NULL,
+                        case_status TEXT NOT NULL
+                            CHECK (
+                                case_status IN (
+                                    'awaiting_manual_review',
+                                    'reviewed'
+                                )
+                            ),
+                        consistency_status TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        case_data TEXT NOT NULL
+                    )
+                """)
+
+                connection.execute("""
+                    INSERT INTO approval_review_cases_new (
+                        case_id,
+                        plan_id,
+                        case_status,
+                        consistency_status,
+                        created_at,
+                        case_data
+                    )
+                    SELECT
+                        case_id,
+                        plan_id,
+                        case_status,
+                        consistency_status,
+                        created_at,
+                        case_data
+                    FROM approval_review_cases
+                """)
+
+                connection.execute("""
+                    DROP TABLE approval_review_cases
+                """)
+
+                connection.execute("""
+                    ALTER TABLE approval_review_cases_new
+                    RENAME TO approval_review_cases
+                """)
+
+            connection.execute("""
+                CREATE INDEX IF NOT EXISTS
+                    idx_review_cases_plan_id
+                ON approval_review_cases (plan_id)
+            """)
+
+            connection.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS
+                    idx_one_open_review_per_plan
+                ON approval_review_cases (plan_id)
+                WHERE case_status = 'awaiting_manual_review'
+            """)
+
+            connection.commit()
+
+        except Exception:
+            connection.rollback()
+            raise
 
 
 def save_approval_review_case(review_case):
