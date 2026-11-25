@@ -436,3 +436,47 @@ def complete_approval_review_case(
             raise
 
     return review_case
+
+
+def list_approval_review_cases_for_plan(plan_id):
+    """
+    Bir plana ait tum inceleme vakalarini getirir.
+
+    - Acik ve tamamlanmis vakalari kapsar.
+    - Olusturulma zamanina gore eskiden yeniye siralar.
+    - Veritabanina yazmaz.
+    """
+
+    if not isinstance(plan_id, str) or not plan_id.strip():
+        raise ValueError("Gecerli plan_id gerekli.")
+
+    with closing(connect_db()) as connection:
+        rows = connection.execute("""
+            SELECT
+                case_id,
+                plan_id,
+                case_status,
+                case_data
+            FROM approval_review_cases
+            WHERE plan_id = ?
+            ORDER BY created_at ASC, case_id ASC
+        """, (plan_id,)).fetchall()
+
+    history = []
+
+    for row in rows:
+        review_case = json.loads(row["case_data"])
+
+        if (
+            not isinstance(review_case, dict)
+            or review_case.get("case_id") != row["case_id"]
+            or review_case.get("plan_id") != row["plan_id"]
+            or review_case.get("case_status") != row["case_status"]
+        ):
+            raise ValueError(
+                "Review case gecmisi tutarsiz."
+            )
+
+        history.append(review_case)
+
+    return history
