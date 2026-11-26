@@ -91,6 +91,7 @@ def preflight_dated_plan(plan_id):
         "project_id": plan["project_id"],
         "reservation_count": validation["reservation_count"],
         "reservations": reservations,
+        "approval_fingerprint": expected_fingerprint,
         "ready_for_capacity_revalidation": True,
         "applied": False,
     }
