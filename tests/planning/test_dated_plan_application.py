@@ -113,6 +113,22 @@ class TestDatedPlanApplication(unittest.TestCase):
 
             connection.commit()
 
+
+        # Bu testlerin odagi atomik uygulama servisidir.
+        # Snapshot modulu ayri test dosyasinda
+        # ve yeni entegrasyon testlerinde sinanir.
+        snapshot_patch = patch(
+            f"{MODULE}.revalidate_dated_plan_snapshot",
+            side_effect=lambda initial: {
+                **initial,
+                "status": "snapshot_revalidated",
+                "snapshot_matches": True,
+            },
+        )
+
+        snapshot_patch.start()
+        self.addCleanup(snapshot_patch.stop)
+
     def reservations_for(self, day):
         return get_daily_reservations(
             "EMP-001",
