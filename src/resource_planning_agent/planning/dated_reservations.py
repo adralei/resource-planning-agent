@@ -10,6 +10,11 @@ from resource_planning_agent.storage.database import PLANNING_PERIOD
 from resource_planning_agent.planning.dated_capacity import _parse_iso_date
 
 
+from resource_planning_agent.storage.dated_application_registry import (
+    insert_dated_application_record,
+)
+
+
 def initialize_reservation_schema():
     """
     Gunluk kaynak rezervasyon tablosunu olusturur.
@@ -229,13 +234,13 @@ def reserve_daily_hours(
             connection.rollback()
             raise
 
-
-
 def reserve_daily_batch(
     plan_id,
     reservations,
     planning_period=PLANNING_PERIOD,
+    approval_fingerprint=None,
 ):
+
     """
     Bir plana ait birden fazla gunluk rezervasyonu
     tek transaction icinde olusturur.
@@ -319,6 +324,38 @@ def reserve_daily_batch(
         connection.execute("BEGIN IMMEDIATE")
 
         try:
+
+            # Yeni atomik uygulama modunda bagimsiz
+            # SQLite onay kaydini transaction icinde kontrol et.
+            if approval_fingerprint is not None:
+                registered = connection.execute("""
+                    SELECT fingerprint
+                    FROM approval_fingerprints
+                    WHERE plan_id = ?
+                """, (plan_id,)).fetchone()
+
+                if (
+                    registered is None
+                    or registered["fingerprint"]
+                        != approval_fingerprint
+                ):
+                    raise ValueError(
+                        "Bagimsiz onay fingerprint'i "
+                        "bulunamadi veya eslesmiyor."
+                    )
+
+                # Farkli reservation_id kullanilarak ayni
+                # planin tekrar uygulanmasini da engelle.
+                application = connection.execute("""
+                    SELECT 1
+                    FROM dated_plan_applications
+                    WHERE plan_id = ?
+                """, (plan_id,)).fetchone()
+
+                if application is not None:
+                    raise ValueError(
+                        "Bu plan zaten uygulanmis."
+                    )
             # Ayni ID daha once kullanilmis mi?
             for reservation_id in seen_ids:
                 existing = connection.execute("""
@@ -400,6 +437,16 @@ def reserve_daily_batch(
                     item["capacity_date"],
                     item["reserved_hours"],
                 ))
+
+            # Rezervasyonlarla ayni transaction icinde
+            # plan uygulama kaydini olustur.
+            if approval_fingerprint is not None:
+                insert_dated_application_record(
+                    connection=connection,
+                    plan_id=plan_id,
+                    approval_fingerprint=approval_fingerprint,
+                    reservation_count=len(reservations),
+                )
 
             connection.commit()
 
